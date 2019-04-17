@@ -12,6 +12,9 @@ crikey: $(OBJ)
 install: crikey
 	cp crikey /usr/local/bin
 
+uninstall:
+	rm -f /usr/local/bin/crikey
+
 clean:
 	rm -f $(OBJ) crikey *~
 

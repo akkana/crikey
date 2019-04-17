@@ -21,6 +21,7 @@
  *
  */
 
+#include <X11/Intrinsic.h> // for TRUE
 #include <X11/Xlib.h>
 #include <X11/extensions/XTest.h>
 #include <stdio.h>
@@ -28,6 +29,9 @@
 #include <unistd.h>    // for sleep
 
 static int Debug = 0;
+
+/* Should we use the XTest extension, or just XSendEvent? */
+static int UseXTest = 0;
 
 struct {
     char ch;
@@ -93,10 +97,37 @@ static void simulateKeyPress(Display *disp, char *keyname)
     if (Debug)
         printf("Key is '%c', keysym is %ld\n", *keyname, keysym);
     keycode = XKeysymToKeycode(disp, keysym);
-    XTestGrabControl(disp, True);
-    if (Debug)
-        printf("Calling XTestFakeKeyEvent(%p, %d, 1, 0)\n", disp, keycode);
-    XTestFakeKeyEvent(disp, keycode, True, 0);
+    if (UseXTest) {
+        XTestGrabControl(disp, True);
+        if (Debug)
+            printf("Calling XTestFakeKeyEvent(%p, %d, 1, 0)\n", disp, keycode);
+        XTestFakeKeyEvent(disp, keycode, True, 0);
+    }
+    else {
+        XKeyEvent kevent;
+        Window focuswin;
+        int revert_to;
+        XGetInputFocus(disp, &focuswin, &revert_to);
+        if (focuswin == 0) {
+            printf("No focused window!\n");
+            return;
+        }
+        kevent.display = disp;
+        kevent.window = focuswin;
+        kevent.root = DefaultRootWindow(disp);
+        kevent.subwindow = None;
+        kevent.time = CurrentTime;
+        kevent.x = 1;
+        kevent.y = 1;
+        kevent.x_root = 1;
+        kevent.y_root = 1;
+        kevent.same_screen = TRUE;
+        kevent.type = KeyPress;
+        kevent.keycode = keycode;
+        kevent.state = 0;    /* or get current modifiers? */
+
+        XSendEvent(disp, focuswin, TRUE, KeyPressMask, (XEvent *)&kevent);
+    }
     XSync(disp, False);
     XTestGrabControl(disp, False);
 }
@@ -135,6 +166,7 @@ int main(int argc, char** argv)
 {
     int i;
     Display* disp = XOpenDisplay(0);
+    int op, ev, er;
 
     while (argc > 1 && argv[1][0] == '-') {
         switch(argv[1][1]) {
@@ -150,6 +182,15 @@ int main(int argc, char** argv)
         }
         --argc;
         ++argv;
+    }
+
+    /* Decide whether we can use the XTest extension */
+    UseXTest = XQueryExtension(disp, "XTEST", &op, &ev, &er);
+    if (Debug) {
+        if (UseXTest)
+            printf("Using XTest Extension\n");
+        else
+            printf("No XTest Extension: Using XSendEvent\n");
     }
 
     for (i=1; i < argc; ++i) {

@@ -4,7 +4,9 @@
  * to allow for binding passwords, etc. to a key.
  *
  * Copyright 2003 by Akkana Peck, http://www.shallowsky.com/software/
- * Modified by Efraim Feinstein, 2004 
+ * Other contributors:
+ *    Efraim Feinstein, 2004
+ *    Glen Smith, 2008
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,6 +32,8 @@
 #include <unistd.h>    // for sleep
 #include <ctype.h>     // for isdigit
 
+#define VERSION "0.6"
+
 static int Debug = 0;
 static int UseXTest = 0;
 static int UseStdin = 0;
@@ -49,8 +53,10 @@ struct {
     { '\e', "Escape" },
     { '!', "exclam" },
     { '#', "numbersign" },
+    { '%', "percent" },
     { '$', "dollar" },
     { '&', "ampersand" },
+    { '"', "quotedbl" },
     { '\'', "apostrophe" },
     { '(', "parenleft" },
     { ')', "parenright" },
@@ -115,7 +121,14 @@ static int isshift(char *keyname)
 static void simulateKeyPress(Display *disp, char *keyname)
 {
     KeyCode keycode = 0;
-    KeySym keysym = XStringToKeysym(keyname);
+    KeySym keysym;
+
+    /* For some reason, '<' needs special treatment, or it will show up as > */
+    if ( *keyname == '<' )
+        keysym = 44;
+    else
+        keysym = XStringToKeysym(keyname);
+
     if (keysym == 0) {
         int i;
         for (i=0; i < ((sizeof NonPrintables) / (sizeof *NonPrintables)); ++i)
@@ -127,8 +140,9 @@ static void simulateKeyPress(Display *disp, char *keyname)
                 break;
             }
     }
+
     if (keysym == 0) {
-        printf("Can't simulate key '%c'\n", *keyname);
+        printf("crikey: Can't simulate key '%c'\n", *keyname);
         return;
     }
     if (Debug)
@@ -163,7 +177,8 @@ static void simulateKeyPress(Display *disp, char *keyname)
         kevent.same_screen = TRUE;
         kevent.type = KeyPress;
         kevent.keycode = keycode;
-        kevent.state = isshift(keyname) ? ShiftMask : 0;    /* or get current modifiers? */
+        kevent.state = isshift(keyname) ? ShiftMask : 0;
+                                       /* or get current modifiers? */
 
         XSendEvent(disp, focuswin, TRUE, KeyPressMask, (XEvent *)&kevent);
         /* Wonder if we might ever need the key release --
@@ -241,6 +256,7 @@ int main(int argc, char** argv)
               UseStdin = 1;
               break;
           default:
+              printf("crikey! version %s\n", VERSION);
               printf("Usage: crikey [-t] [-s sleeptime] [-i] string...\n");
               exit(1);
         }

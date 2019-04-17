@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -Wall -Wstrict-prototypes -g -O2
 SRC = crikey.c
 OBJ = $(SRC:.c=.o)
-LIBS = -L/usr/X11R6/lib -lX11 -lXtst
+LIBS = -L/usr/X11R6/lib -lX11 -lXtst -lXext
 
 all: crikey
 

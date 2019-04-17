@@ -32,7 +32,7 @@
 #include <unistd.h>    // for sleep
 #include <ctype.h>     // for isdigit
 
-#define VERSION "0.8.1"
+#define VERSION "0.8.2"
 
 static int Debug = 0;
 static int UseXTest = 0;

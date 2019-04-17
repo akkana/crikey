@@ -27,10 +27,9 @@
 #include <stdio.h>
 #include <stdlib.h>    // for atoi
 #include <unistd.h>    // for sleep
+#include <ctype.h>     // for isdigit
 
 static int Debug = 0;
-
-/* Should we use the XTest extension, or just XSendEvent? */
 static int UseXTest = 0;
 
 struct {
@@ -102,6 +101,8 @@ static void simulateKeyPress(Display *disp, char *keyname)
         if (Debug)
             printf("Calling XTestFakeKeyEvent(%p, %d, 1, 0)\n", disp, keycode);
         XTestFakeKeyEvent(disp, keycode, True, 0);
+        XSync(disp, False);
+        XTestGrabControl(disp, False);
     }
     else {
         XKeyEvent kevent;
@@ -127,9 +128,13 @@ static void simulateKeyPress(Display *disp, char *keyname)
         kevent.state = 0;    /* or get current modifiers? */
 
         XSendEvent(disp, focuswin, TRUE, KeyPressMask, (XEvent *)&kevent);
+        /* Wonder if we might ever need the key release --
+         * but in some contexts, that actually gets interpreted
+         * as another key press!
+        XSendEvent(disp, focuswin, TRUE, KeyReleaseMask, (XEvent *)&kevent);
+         */
+        XSync(disp, False);
     }
-    XSync(disp, False);
-    XTestGrabControl(disp, False);
 }
 
 static void simulateKeyPressForString(Display* disp, char* s)
@@ -171,7 +176,14 @@ int main(int argc, char** argv)
     while (argc > 1 && argv[1][0] == '-') {
         switch(argv[1][1]) {
           case 's':  // sleep
-              if (argc > 2) {
+              if (isdigit(argv[1][2])) {
+                  int sleeptime = atoi(argv[1]+2);
+                  printf("atoi(%s+n)\n", argv[1]);
+                  if (Debug)
+                      printf("Sleeping for %d seconds\n", sleeptime);
+                  sleep(sleeptime);
+              }
+              else if (argc > 2 && isdigit(argv[2][0])) {
                   int sleeptime = atoi(argv[2]);
                   if (Debug)
                       printf("Sleeping for %d seconds\n", sleeptime);
@@ -179,13 +191,23 @@ int main(int argc, char** argv)
                   --argc;
                   ++argv;
               }
+              break;
+
+          case 't':  // use X Test extension if available.  Default: don't.
+              UseXTest = 1;
+              break;
+
+          default:
+              printf("Usage: crikey [-t] [-s sleeptime] string...\n");
+              exit(1);
         }
         --argc;
         ++argv;
     }
 
     /* Decide whether we can use the XTest extension */
-    UseXTest = XQueryExtension(disp, "XTEST", &op, &ev, &er);
+    if (UseXTest)
+        UseXTest = XQueryExtension(disp, "XTEST", &op, &ev, &er);
     if (Debug) {
         if (UseXTest)
             printf("Using XTest Extension\n");

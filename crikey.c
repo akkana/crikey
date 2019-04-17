@@ -4,6 +4,7 @@
  * to allow for binding passwords, etc. to a key.
  *
  * Copyright 2003 by Akkana Peck, http://www.shallowsky.com/software/
+ * Modified by Efraim Feinstein, 2004 
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,6 +32,10 @@
 
 static int Debug = 0;
 static int UseXTest = 0;
+static int UseStdin = 0;
+
+/* size of the buffer for reading from stdin */
+#define BUFSIZE 256
 
 struct {
     char ch;
@@ -73,6 +78,39 @@ struct {
     { '}', "braceright" },
     { '~', "asciitilde" },
 };
+
+static int isshift(char *keyname) 
+{
+    char c = keyname[0];
+    if (isupper(c)) return 1;
+    
+    switch(c) {
+        case '~':
+        case '!':
+        case '@':
+        case '#':
+        case '$':
+        case '%':
+        case '^':
+        case '&':
+        case '*':
+        case '(':
+        case ')':
+        case '_':
+        case '+':
+        case '|':
+        case '{':
+        case '}':
+        case ':':
+        case '"':
+        case '<':
+        case '>':
+        case '?':
+            return 1;
+                       
+    }
+    return 0;
+}
 
 static void simulateKeyPress(Display *disp, char *keyname)
 {
@@ -125,7 +163,7 @@ static void simulateKeyPress(Display *disp, char *keyname)
         kevent.same_screen = TRUE;
         kevent.type = KeyPress;
         kevent.keycode = keycode;
-        kevent.state = 0;    /* or get current modifiers? */
+        kevent.state = isshift(keyname) ? ShiftMask : 0;    /* or get current modifiers? */
 
         XSendEvent(disp, focuswin, TRUE, KeyPressMask, (XEvent *)&kevent);
         /* Wonder if we might ever need the key release --
@@ -175,6 +213,9 @@ int main(int argc, char** argv)
 
     while (argc > 1 && argv[1][0] == '-') {
         switch(argv[1][1]) {
+          case 'd': // debug mode
+              Debug=1;
+              break;      
           case 's':  // sleep
               if (isdigit(argv[1][2])) {
                   int sleeptime = atoi(argv[1]+2);
@@ -196,9 +237,11 @@ int main(int argc, char** argv)
           case 't':  // use X Test extension if available.  Default: don't.
               UseXTest = 1;
               break;
-
+          case 'i':  // take string from standard input
+              UseStdin = 1;
+              break;
           default:
-              printf("Usage: crikey [-t] [-s sleeptime] string...\n");
+              printf("Usage: crikey [-t] [-s sleeptime] [-i] string...\n");
               exit(1);
         }
         --argc;
@@ -214,13 +257,26 @@ int main(int argc, char** argv)
         else
             printf("No XTest Extension: Using XSendEvent\n");
     }
-
-    for (i=1; i < argc; ++i) {
-        simulateKeyPressForString(disp, argv[i]);
-        if (i < argc-1)
-            simulateKeyPress(disp, " ");
+    
+    if (!UseStdin) {
+        for (i=1; i < argc; ++i) {
+            simulateKeyPressForString(disp, argv[i]);
+            if (i < argc-1)
+                simulateKeyPress(disp, " ");
+        }
     }
-
+    else {  /* use standard input ; this is highly inefficient */
+        char buffer[BUFSIZE];
+        
+        do {
+            fgets(buffer, BUFSIZE, stdin);
+            /* don't print empty strings */
+            if (strlen(buffer) > 0) 
+                simulateKeyPressForString(disp, buffer);            
+            /* clear the string */
+            buffer[0] = '\0';
+        } while (!feof(stdin));
+    }
     return 0;
 }
 

@@ -32,7 +32,7 @@
 #include <unistd.h>    // for sleep
 #include <ctype.h>     // for isdigit
 
-#define VERSION "0.8.3"
+#define VERSION "0.8.4"
 
 static int Debug = 0;
 static int UseXTest = 1;
@@ -95,7 +95,8 @@ struct {
     { '~', "asciitilde" },
 };
 
-static int isshift(char *keyname) 
+/* Yuck, keyboard dependent shifts. Don't know of any other way, though. */
+static int isshift(char *keyname)
 {
     char c = keyname[0];
 
@@ -105,7 +106,7 @@ static int isshift(char *keyname)
         return 0;
 
     if (isupper(c)) return 1;
-    
+
     switch(c) {
         case '~':
         case '!':
@@ -129,7 +130,7 @@ static int isshift(char *keyname)
         case '>':
         case '?':
             return 1;
-                       
+
     }
     return 0;
 }
@@ -163,7 +164,7 @@ static void simulateKeyPress(Display *disp, KeySym keysym, int modmask)
                 printf("Calling XTestFakeKeyEvent(%p, %d, %d, %d)\n", \
                        dpy, k, p, dl); \
             XTestFakeKeyEvent(dpy, k, p, dl); \
-    }
+        }
 
         /* Handle modifier key presses */
         if (modmask & ShiftMask) {
@@ -295,6 +296,7 @@ static void simulateKeyPressForString(Display* disp, char* s)
               case 'C':
                   modmask |= ControlMask;
                   cont = 1;
+                  if (Debug) printf("C- control char\n");
                   break;
               case 'A':
                   modmask |= Mod1Mask;
@@ -342,15 +344,27 @@ static void simulateKeyPressForString(Display* disp, char* s)
 
                   /* keysym is in sym; parse it now */
                   sym[i] = '\0';
+                  keysym = XStringToKeysym(sym);
                   if (Debug) {
-                      printf("Found symbol %s ...", sym);
-                      printf("which has keysym %lu ", XStringToKeysym(sym));
+                      printf("Found symbol '%s' ...", sym);
+                      printf("which has keysym %lu ", keysym);
                       printf("and keycode %d\n",
                              (unsigned)XKeysymToKeycode(disp,
                                                         XStringToKeysym(sym)));
                   }
                   buf[0] = 0;
-                  keysym = XStringToKeysym(sym);
+
+                  /* Some symbols, like >, modmask needs to be ShiftMask.
+                   * XConvertCase can't tell us this -- it says both
+                   * the upper and lower forms of > are 62.
+                   * XStringToKeysym doesn't tell us either,
+                   * nor the char string we could use for isshift().
+                   * Empirically, though, converting the keysym to char
+                   * works and lets us look it up in isshift.
+                   * What a mess!
+                   */
+                  if (isshift((char*)&keysym))
+                      modmask |= ShiftMask;
                   ++s;
                   break;
               default:
@@ -360,21 +374,28 @@ static void simulateKeyPressForString(Display* disp, char* s)
             }
         }
         else if (s[0] == '^' && s[1] != '\0') {
-            /* Control character */
-            if (Debug) printf("Control character\n");
-            if (!isalpha(s[1])) {
+            if (s[1] == '^') {
                 buf[0] = '^';
+                ++s;
             }
-            else if (isupper(s[1]))
-                buf[0] = s[1] - 'A' + 1;
+            else if (isalpha(s[1])) {
+                /* Control character: send the letter along with ControlMask */
+                if (Debug) printf("Control character\n");
+                modmask |= ControlMask;
+                if (isupper(s[1]))
+                    buf[0] = s[1] - 'A' + 'a';
+                else
+                    buf[0] = s[1];
+                if (Debug) printf("Control character ^%c = %d\n", s[1], buf[0]);
+                ++s;
+            }
             else
-                buf[0] = s[1] - 'a' + 1;
-            ++s;
-            if (Debug)
-                printf("Control character ^%c = %ld\n", s[0], keysym);
+                buf[0] = '^';
         }
-        else
+        else {
+            if (Debug) printf("character '%c'\n", buf[0]);
             buf[0] = *s;
+        }
 
         /* If cont is set, then we've only gotten modifiers
          * and need to loop around again to get the actual character.
@@ -392,10 +413,16 @@ static void simulateKeyPressForString(Display* disp, char* s)
             /* Ctrl-D has to be sent as a control and a d,
              * not an EOF character.
              */
+#if 0
             if (buf[0] == 4) {   /* ctrl-d */
                 modmask |= ControlMask;
                 buf[0] = 'd';
             }
+            else if (buf[0] == 12) {   /* ctrl-l */
+                modmask |= ControlMask;
+                buf[0] = 'l';
+            }
+#endif
 
             /* For some reason, '<' needs special treatment.
              * XStringToKeysym("less") returns 60, and
@@ -413,7 +440,7 @@ static void simulateKeyPressForString(Display* disp, char* s)
             else
                 keysym = XStringToKeysym(buf);
 
-            if (keysym == 0) {
+            if (keysym == NoSymbol) {
                 int i;
                 if (Debug) printf("keysym for char 0x%x was 0\n", buf[0]);
                 for (i=0;
@@ -465,8 +492,9 @@ void LongHelp(void)
     printf("Crikey input options:\n\n");
     printf("Normal letters: just type the letters, e.g. crikey my long string.\n\n");
     printf("For most of the following special cases, it's best to use\n");
-    printf("quotes so the shell won't strip out the backslashes.\n\n");
-    printf("Control characters: ^A sends a Control-A\n");
+    printf("single quotes so the shell won't strip out the backslashes.\n\n");
+    printf("Control characters: ^A sends a Control-A.\n");
+    printf("To send a plain ^, use ^^.\n");
     printf("Numeric ASCII codes: \\12\n");
     printf("Special codes: \\t tab, \\b backspace, \\n newline, \\r return, \\d delete, \\e escape\n");
     printf("Modifier keys: \\S for shift, \\C control, \\A alt,\n");
@@ -474,6 +502,20 @@ void LongHelp(void)
     printf("Special symbols: \\(Return\\) (defined in /usr/include/X11/keysymdef.h)\n");
     printf("  but only those defined on your keyboard will likely work.)\n");
     printf("\n");
+    printf("Examples:\n");
+    printf("  crikey '\\CL': print a control-L (clear the screen).\n");
+    printf("  crikey '^L': print a control-L (clear the screen).\n");
+    printf("  crikey \"echo foo \\(greater\\) /dev/null\"\n");
+    printf("  crikey \"wall\\nHello, world\\n^D\"\n");
+    printf("  crikey '\\(Up\\)': send an up-arrow.\n");
+    printf("  crikey -t \"\\A\\t\":\n");
+    printf("    Should change the active window (in most window managers).\n");
+    printf("    This needs XTest (-t) and doesn't work with XSendEvent.\n");
+    printf("  crikey '~\\Cz':\n");
+    printf("    When sshed into another computer: should suspend the ssh.\n");
+    printf("  crikey 'oHere is a line\\e\\e'\n");
+    printf("    In vim, not in insert mode. Should add a line, leave\n");
+    printf("    insert mode then beep if your machine supports that\n");
     exit(0);
 }
 
@@ -498,7 +540,7 @@ int main(int argc, char** argv)
         switch(argv[1][1]) {
           case 'd': // debug mode
               Debug=1;
-              break;      
+              break;
           case 'S':  // millisecond sleep
               use_usleep = TRUE;
           case 's':  // sleep
@@ -555,7 +597,7 @@ int main(int argc, char** argv)
         else
             printf("Using XSendEvent\n");
     }
-    
+
     if (!UseStdin) {
         KeySym space_keysym = XStringToKeysym(" ");
         for (i=1; i < argc; ++i) {
@@ -566,11 +608,11 @@ int main(int argc, char** argv)
     }
     else {  /* use standard input ; this is highly inefficient */
         char buffer[BUFSIZE];
-        
+
         do {
             if (fgets(buffer, BUFSIZE, stdin) != 0) {
                 /* don't print empty strings */
-                if (strlen(buffer) > 0) 
+                if (strlen(buffer) > 0)
                     simulateKeyPressForString(disp, buffer);
                 /* clear the string */
                 buffer[0] = '\0';
@@ -579,5 +621,3 @@ int main(int argc, char** argv)
     }
     return 0;
 }
-
-

@@ -1,0 +1,76 @@
+.TH CRIKEY 1 "v0.8.3 19 Aug 2009" "Akkana Peck"
+.SH NAME
+crikey \- A program to generate typed key events on Linux
+.SH SYNOPSIS
+.B crikey [-itxr] [-sS sleeptime] string...
+.SH DESCRIPTION
+.LP
+.B crikey 
+Send key events, as if args was typed in whatever X window currently has focus.
+.SH OPTIONS
+.TP 10
+.BI \-s
+seconds: sleep time before sending
+.TP 10
+.BI \-S
+seconds: sleep time before sending
+Many window managers need a delay for focus shifting
+or to allow a modifier button to be released.
+.TP 10
+.BI \-i
+Interactive (read input from stdin)
+.TP 10
+.BI \-t
+Use XTest to send events (default)
+.TP 10
+.BI \-x
+Use XSendEvent to send events
+.TP 10
+.BI \-r
+Send events to root window (only with XSendEvent)
+.TP 10
+.BI \-l
+Show long (more detailed) help
+.TP 10
+.BI \-d
+Show debug messages
+.SH Crikey input options
+Sample usage:
+
+crikey -s 1 'My long string\\nExtending over two lines.'
+
+Using quotes around the string is normally recommended, 
+to avoid problems with your shell treating any characters specially, especially backslashes. 
+.SH Special characters and syntaxes
+Control characters use ^: ^A sends a Control-A
+
+Numeric ASCII codes (decimal only): \27 sends ESC
+
+Special codes: \\t tab, \\b backspace, \\n newline, \\r return, \\d delete, \\e escape, \\ backslash
+
+Modifier keys: \S shift, \\C control, \\A alt, \\M or \\W for the "Windows" key. 
+These must be capitalized, and they only apply to the next single character, 
+so \\Aabc will send alt-A followed by b and c with no modifier keys.
+
+Special symbols with \\( \\): \\(Return\\) ... 
+these are defined in /usr/include/X11/keysymdef.h, 
+but only those defined on your keyboard will likely work.
+.SH  Miscellany
+New in 0.8: I've added symbols for BackSpace and Delete. But more important, I've added two new ways to specify characters.
+
+You can specify characters by symbol using \\( and \\), using the symbol definitions from /usr/include/X11/keysymdef.h. For example, \\(BackSpace\\) would insert a backspace character.
+
+You can also specify control characters using the up-caret ^ character. So you could get that same backspace character with ^H.
+
+0.8.1 just fixes a new compiler warning, no functional changes.
+0.8.2 adds -lXext to the link line -- some systems added that automatically, but making it explicit is better.
+0.8.3 adds a bunch more new ways to specify characters, fixes some bugs, and switches back to XTest as the default (use -x to use XSendEvent).
+
+I also have a new, experimental, Python version called pykey, which requires the python-xlib library. It might be useful for people who don't have a compiler installed, or as a demo of how to generate key events in python-xlib. Try it out: pykey-0.1. 
+
+.SH AUTHOR
+.LP
+.NF
+Akkana Peck (e-mail: webster@shallowsky.com)
+.br
+.FI

@@ -32,7 +32,7 @@
 #include <unistd.h>    // for sleep
 #include <ctype.h>     // for isdigit
 
-#define VERSION "0.6"
+#define VERSION "0.7"
 
 static int Debug = 0;
 static int UseXTest = 0;
@@ -122,13 +122,10 @@ static void simulateKeyPress(Display *disp, char *keyname)
 {
     KeyCode keycode = 0;
     KeySym keysym;
+    short isShifted;
+    KeyCode shiftKeycode = 0;
 
-    /* For some reason, '<' needs special treatment, or it will show up as > */
-    if ( *keyname == '<' )
-        keysym = 44;
-    else
-        keysym = XStringToKeysym(keyname);
-
+    keysym = XStringToKeysym(keyname);
     if (keysym == 0) {
         int i;
         for (i=0; i < ((sizeof NonPrintables) / (sizeof *NonPrintables)); ++i)
@@ -145,14 +142,36 @@ static void simulateKeyPress(Display *disp, char *keyname)
         printf("crikey: Can't simulate key '%c'\n", *keyname);
         return;
     }
+
+    /* For some reason, '<' needs special treatment:
+     * XStringToKeysym("less") returns 60, and
+     * XKeysymToKeycode(60) returns keycode 94
+     * but generating an event with keycode 94 will send a '>'
+     * The keysym needs to be 44 to get a keycode of 59 to send a '<'.
+     */
+    if (*keyname == '<')
+        keycode = 59;
+    else
+        keycode = XKeysymToKeycode(disp, keysym);
     if (Debug)
-        printf("Key is '%c', keysym is %ld\n", *keyname, keysym);
-    keycode = XKeysymToKeycode(disp, keysym);
+        printf("Key is '%c', keysym is %ld, keycode is %d\n",
+               *keyname, keysym, keycode);
+    isShifted = isshift(keyname);
+    if (isShifted && shiftKeycode == 0) {
+        shiftKeycode = XKeysymToKeycode(disp, XK_Shift_L);
+        printf("Keycode for shift is %d\n", shiftKeycode);
+    }
+
     if (UseXTest) {
         XTestGrabControl(disp, True);
         if (Debug)
             printf("Calling XTestFakeKeyEvent(%p, %d, 1, 0)\n", disp, keycode);
-        XTestFakeKeyEvent(disp, keycode, True, 0);
+        if (isShifted)
+            XTestFakeKeyEvent(disp, shiftKeycode, True, 0);  /* shift press */
+        XTestFakeKeyEvent(disp, keycode, True, 0);      /* key press */
+        XTestFakeKeyEvent(disp, keycode, False, 0);     /* key release */
+        if (isShifted)
+            XTestFakeKeyEvent(disp, shiftKeycode, False, 0);  /* shift rel */
         XSync(disp, False);
         XTestGrabControl(disp, False);
     }
@@ -177,8 +196,11 @@ static void simulateKeyPress(Display *disp, char *keyname)
         kevent.same_screen = TRUE;
         kevent.type = KeyPress;
         kevent.keycode = keycode;
-        kevent.state = isshift(keyname) ? ShiftMask : 0;
+        kevent.state = isShifted ? ShiftMask : 0;
                                        /* or get current modifiers? */
+        if (Debug)
+            printf("Sending an event with keycode = %d, shift mask %d\n",
+                   kevent.keycode, kevent.state);
 
         XSendEvent(disp, focuswin, TRUE, KeyPressMask, (XEvent *)&kevent);
         /* Wonder if we might ever need the key release --
@@ -226,6 +248,8 @@ int main(int argc, char** argv)
     Display* disp = XOpenDisplay(0);
     int op, ev, er;
 
+    printf("<> are %ld, %ld\n\n",
+           XStringToKeysym("less"), XStringToKeysym("greater"));
     while (argc > 1 && argv[1][0] == '-') {
         switch(argv[1][1]) {
           case 'd': // debug mode

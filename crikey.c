@@ -32,7 +32,7 @@
 #include <unistd.h>    // for sleep
 #include <ctype.h>     // for isdigit
 
-#define VERSION "0.7"
+#define VERSION "0.8"
 
 static int Debug = 0;
 static int UseXTest = 0;
@@ -40,6 +40,12 @@ static int UseStdin = 0;
 
 /* size of the buffer for reading from stdin */
 #define BUFSIZE 256
+
+/*
+ * Non-printable characters we can handle.
+ * List of character definitions is in <X11/keysymdef.h
+ * if you need to add anything.
+ */
 
 struct {
     char ch;
@@ -50,6 +56,8 @@ struct {
     { '\t', "Tab" },
     { '\n', "Return" },  // for some reason this needs to be cr, not lf
     { '\r', "Return" },
+    { '\010', "BackSpace" },  // \b doesn't work
+    { '\177', "Delete" },
     { '\e', "Escape" },
     { '!', "exclam" },
     { '#', "numbersign" },
@@ -88,6 +96,12 @@ struct {
 static int isshift(char *keyname) 
 {
     char c = keyname[0];
+
+    /* Filter out keysyms, any string longer than 1 char */
+    /* XXX This will probably break if we ever support multibyte chars. */
+    if (keyname[1] != '\0')
+        return 0;
+
     if (isupper(c)) return 1;
     
     switch(c) {
@@ -154,12 +168,13 @@ static void simulateKeyPress(Display *disp, char *keyname)
     else
         keycode = XKeysymToKeycode(disp, keysym);
     if (Debug)
-        printf("Key is '%c', keysym is %ld, keycode is %d\n",
-               *keyname, keysym, keycode);
+        printf("Key is '%s', keysym is %ld, keycode is %d\n",
+               keyname, keysym, keycode);
     isShifted = isshift(keyname);
     if (isShifted && shiftKeycode == 0) {
         shiftKeycode = XKeysymToKeycode(disp, XK_Shift_L);
-        printf("Keycode for shift is %d\n", shiftKeycode);
+        if (Debug)
+            printf("Keycode for shift is %d\n", shiftKeycode);
     }
 
     if (UseXTest) {
@@ -167,9 +182,9 @@ static void simulateKeyPress(Display *disp, char *keyname)
         if (Debug)
             printf("Calling XTestFakeKeyEvent(%p, %d, 1, 0)\n", disp, keycode);
         if (isShifted)
-            XTestFakeKeyEvent(disp, shiftKeycode, True, 0);  /* shift press */
-        XTestFakeKeyEvent(disp, keycode, True, 0);      /* key press */
-        XTestFakeKeyEvent(disp, keycode, False, 0);     /* key release */
+            XTestFakeKeyEvent(disp, shiftKeycode, True, 0);   /* shift press */
+        XTestFakeKeyEvent(disp, keycode, True, 0);            /* key press */
+        XTestFakeKeyEvent(disp, keycode, False, 0);           /* key release */
         if (isShifted)
             XTestFakeKeyEvent(disp, shiftKeycode, False, 0);  /* shift rel */
         XSync(disp, False);
@@ -212,9 +227,14 @@ static void simulateKeyPress(Display *disp, char *keyname)
     }
 }
 
+#define MAXSYMSIZE 32
+
 static void simulateKeyPressForString(Display* disp, char* s)
 {
     char buf[2];
+    char sym[MAXSYMSIZE];
+    int i;
+
     while (*s) {
         if (*s == '\\' && *(s+1) != '\0') {
             switch (*(++s))
@@ -228,6 +248,50 @@ static void simulateKeyPressForString(Display* disp, char* s)
               case 't':
                   buf[0] = '\t';
                   break;
+              case 'b':
+                  buf[0] = '\010';
+                  break;
+              case 'd':
+                  buf[0] = '\177';
+                  break;
+              case '^':
+                  /* special case for \^C */
+                  if (Debug) printf("Control character\n");
+                  if (s[1] == '\0' || !isalpha(s[1])) {
+                      printf("null or nonalpha\n");
+                      buf[0] = '\0';
+                  }
+                  else if (isupper(s[1]))
+                      buf[0] = s[1] - 'A' + 1;
+                  else
+                      buf[0] = s[1] - 'a' + 1;
+                  if (s[1] != '\0')
+                      ++s;
+                  if (Debug)
+                      printf("Control character ^%c = %d\n", s[0], buf[0]);
+                  break;
+              case '(':
+                  /* parse a symbolic name */
+                  for (i=0, ++s;
+                       i < MAXSYMSIZE-1 && s[0] != 0
+                       && !(s[0] == '\\' && s[1] == ')');
+                       ++i, ++s) {
+                      sym[i] = *s;
+                  }
+
+                  /* keysym is in sym; parse it now */
+                  sym[i] = '\0';
+                  if (Debug) {
+                      printf("Found symbol %s\n", sym);
+                      printf("which has keysym %lu\n", XStringToKeysym(sym));
+                      printf("which has keycode %d\n",
+                             (unsigned)XKeysymToKeycode(disp,
+                                                        XStringToKeysym(sym)));
+                  }
+                  simulateKeyPress(disp, sym);
+                  buf[0] = 0;
+                  ++s;
+                  break;
               default:
                   --s;
                   buf[0] = '\\';
@@ -237,7 +301,8 @@ static void simulateKeyPressForString(Display* disp, char* s)
         else
             buf[0] = *s;
         buf[1] = '\0';
-        simulateKeyPress(disp, buf);
+        if (buf[0])
+            simulateKeyPress(disp, buf);
         ++s;
     }
 }
@@ -248,9 +313,16 @@ int main(int argc, char** argv)
     Display* disp = XOpenDisplay(0);
     int op, ev, er;
 
-    printf("<> are %ld, %ld\n\n",
-           XStringToKeysym("less"), XStringToKeysym("greater"));
+    /* -- means "ignore all flags after this one"
+     * so crikey can handle strings starting with a dash.
+     */
     while (argc > 1 && argv[1][0] == '-') {
+        if (argv[1][1] == '-') {
+            --argc;
+            ++argv;
+            break;
+        }
+
         switch(argv[1][1]) {
           case 'd': // debug mode
               Debug=1;
@@ -258,7 +330,6 @@ int main(int argc, char** argv)
           case 's':  // sleep
               if (isdigit(argv[1][2])) {
                   int sleeptime = atoi(argv[1]+2);
-                  printf("atoi(%s+n)\n", argv[1]);
                   if (Debug)
                       printf("Sleeping for %d seconds\n", sleeptime);
                   sleep(sleeptime);

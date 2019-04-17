@@ -3,7 +3,7 @@
  * Plug in to your window manager's key handler,
  * to allow for binding passwords, etc. to a key.
  *
- * Copyright 2003 by Akkana Peck, http://www.shallowsky.com/software/
+ * Copyright 2003-2009 by Akkana Peck, http://www.shallowsky.com/software/
  * Other contributors:
  *    Efraim Feinstein, 2004
  *    Glen Smith, 2008
@@ -32,7 +32,7 @@
 #include <unistd.h>    // for sleep
 #include <ctype.h>     // for isdigit
 
-#define VERSION "0.8"
+#define VERSION "0.8.1"
 
 static int Debug = 0;
 static int UseXTest = 0;
@@ -380,12 +380,13 @@ int main(int argc, char** argv)
         char buffer[BUFSIZE];
         
         do {
-            fgets(buffer, BUFSIZE, stdin);
-            /* don't print empty strings */
-            if (strlen(buffer) > 0) 
-                simulateKeyPressForString(disp, buffer);            
-            /* clear the string */
-            buffer[0] = '\0';
+            if (fgets(buffer, BUFSIZE, stdin) != 0) {
+                /* don't print empty strings */
+                if (strlen(buffer) > 0) 
+                    simulateKeyPressForString(disp, buffer);            
+                /* clear the string */
+                buffer[0] = '\0';
+            }
         } while (!feof(stdin));
     }
     return 0;

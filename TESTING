@@ -30,3 +30,21 @@ crikey 'oHere is a line\e\e'
   jump out of insert mode then beep if your machine supports that
   (for the second escape).
 
+crikey '\CL'
+  Should clear the screen.
+
+crikey '^L'
+  Should clear the screen.
+
+crikey '^^'
+  Should send a ^
+
+crikey -s 3 '\(Up\)'
+  Should send an up-arrow: switch to another window to test.
+
+Open a new tab in firefox, then:
+crikey -s 3 ^W
+  Should close that tab.
+
+crikey -s 3 '\Cw'
+  Should close that tab.

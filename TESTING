@@ -1,0 +1,32 @@
+Important regression tests for Crikey.
+Should run every test with both -t and -x except as noted.
+Add -s secs as needed to change focused window.
+==========================================================
+
+crikey "cat < /etc/lsb-release"
+  Make sure the < comes out right.
+
+crikey "echo foo > /dev/null"
+  Make sure the > comes out right.
+
+crikey "cat \(less\) /etc/lsb-release"
+  Make sure the < comes out right.
+
+crikey "echo foo \(greater\) /dev/null"
+  Make sure the > comes out right.
+
+crikey "wall\nHello, world\n^D"
+  Should run wall without needing any extra input.
+
+crikey -t "\A\t"
+  Should change the active window (in most window managers).
+  This needs XTest (-t) and doesn't work with XSendEvent.
+
+crikey '~\Cz'
+  Do this when sshed into another computer: should suspend the ssh.
+
+crikey 'oHere is a line\e\e'
+  Do this when in vim, not in insert mode. Should add a line,
+  jump out of insert mode then beep if your machine supports that
+  (for the second escape).
+
